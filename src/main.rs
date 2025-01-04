@@ -115,6 +115,7 @@ mod console;
 mod cpu;
 mod panic_wait;
 mod print;
+mod synchronization;
 
 /// Early init code.
 ///
@@ -122,6 +123,9 @@ mod print;
 ///
 /// - Only a single core must be active and running this function.
 unsafe fn kernel_init() -> ! {
-    println!("What hath God wraught?");
-    panic!("Stopping here");
+    use console::console;
+    println!("[0] HotMetal OS - Start");
+    println!("[1] {} characters output", console().chars_written());
+    println!("[_] HotMetal OS - Complete. Have a nice day :)");
+    cpu::wait_forever()
 }
