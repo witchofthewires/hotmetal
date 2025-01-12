@@ -107,12 +107,14 @@
 //! 2. Once finished with architectural setup, the arch code calls `kernel_init()`.
 
 //#![feature(format_args_nl)]
+#![allow(clippy::upper_case_acronyms)]
 #![no_main]
 #![no_std]
 
 mod bsp;
 mod console;
 mod cpu;
+mod driver;
 mod panic_wait;
 mod print;
 mod synchronization;
@@ -122,9 +124,47 @@ mod synchronization;
 /// # Safety
 ///
 /// - Only a single core must be active and running this function.
+/// - The init calls in this function must be in the right order.
 unsafe fn kernel_init() -> ! {
+    
+    if let Err(x) = bsp::driver::init() {
+        panic!("Error initializing BSP subsystem: {}", x);
+    }
+
+    // initialize all device drivers
+    driver::driver_manager().init_drivers();
+    // println! is usable from this point
+
+    kernel_main()
+}
+
+/// takes over from unsafe kernel_init()
+fn kernel_main() -> ! {
+
     use console::console;
     println!("[0] HotMetal OS - Start");
+    println!(
+        "[1] {} version {}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
+    println!("[2] Booting on: {}", bsp::board_name());
+
+    println!("[3] Drivers loaded:");
+    driver::driver_manager().enumerate();
+
+    println!("[4] Chars written: {}", console().chars_written());
+    println!("[5] Echoing input now");
+
+    // Discard any spurious received characters before going into echo mode.
+    console().clear_rx();
+    loop {
+        let c = console().read_char();
+        // TODO not writing
+        console().write_char(c);
+    }    
+
+    // should never reach here
     println!("[1] {} characters output", console().chars_written());
     println!("[_] HotMetal OS - Complete. Have a nice day :)");
     cpu::wait_forever()

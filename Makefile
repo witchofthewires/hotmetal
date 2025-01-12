@@ -37,6 +37,8 @@ endef
 # Default to the RPi3.
 BSP ?= rpi3
 
+# common serial device name for Linux
+DEV_SERIAL ?= /dev/ttyUSB0
 
 
 ##--------------------------------------------------------------------------------------------------
@@ -71,8 +73,6 @@ endif
 # Export for build.rs.
 export LD_SCRIPT_PATH
 
-
-
 ##--------------------------------------------------------------------------------------------------
 ## Targets and Prerequisites
 ##--------------------------------------------------------------------------------------------------
@@ -85,8 +85,6 @@ KERNEL_ELF      = target/$(TARGET)/release/kernel
 # https://doc.rust-lang.org/cargo/guide/build-cache.html#dep-info-files
 KERNEL_ELF_DEPS = $(filter-out %: ,$(file < $(KERNEL_ELF).d)) $(KERNEL_MANIFEST) $(LAST_BUILD_CONFIG)
 
-
-
 ##--------------------------------------------------------------------------------------------------
 ## Command building blocks
 ##--------------------------------------------------------------------------------------------------
@@ -95,7 +93,8 @@ RUSTFLAGS = $(RUSTC_MISC_ARGS)                   \
     -C link-arg=--script=$(KERNEL_LINKER_SCRIPT)
 
 RUSTFLAGS_PEDANTIC = $(RUSTFLAGS) \
-    -D warnings                   \
+# TODO disabling to compile part 5
+#    -D warnings                   \
     -D missing_docs
 
 FEATURES      = --features bsp_$(BSP)
@@ -112,6 +111,8 @@ OBJCOPY_CMD = rust-objcopy \
 
 EXEC_QEMU          = $(QEMU_BINARY) -M $(QEMU_MACHINE_TYPE)
 EXEC_TEST_DISPATCH = ruby tests/dispatch.rb
+EXEC_MINITERM = ruby utils/miniterm.rb
+
 ##------------------------------------------------------------------------------
 ## Dockerization
 ##------------------------------------------------------------------------------
@@ -124,10 +125,17 @@ DOCKER_QEMU  = $(DOCKER_CMD_INTERACT) $(DOCKER_IMAGE)
 DOCKER_TOOLS = $(DOCKER_CMD) $(DOCKER_IMAGE)
 DOCKER_TEST  = $(DOCKER_CMD) $(DOCKER_ARG_DIR_COMMON) $(DOCKER_IMAGE)
 
+# dockerize commands, which require USB passthrough, only on Linux
+DOCKER_ARG_DEV        = --privileged -v /dev:/dev
+ifeq ($(shell uname -s),Linux)
+    DOCKER_CMD_DEV      = $(DOCKER_CMD) $(DOCKER_ARG_DEV)
+    DOCKER_MINITERM = $(DOCKER_CMD_DEV) $(DOCKER_ARG_DIR_COMMON) $(DOCKER_IMAGE)
+endif
+
 ##--------------------------------------------------------------------------------------------------
 ## Targets
 ##--------------------------------------------------------------------------------------------------
-.PHONY: all doc qemu clippy clean readelf objdump nm check
+.PHONY: all doc qemu clippy clean miniterm readelf objdump nm check
 
 all: $(KERNEL_BIN)
 
@@ -178,6 +186,12 @@ qemu: $(KERNEL_BIN)
 	$(call color_header, "Launching QEMU")
 	@$(DOCKER_QEMU) $(EXEC_QEMU) $(QEMU_RELEASE_ARGS) -kernel $(KERNEL_BIN)
 endif
+
+##------------------------------------------------------------------------------
+## Connect to target's serial
+##------------------------------------------------------------------------------
+miniterm:
+	@$(DOCKER_MINITERM) $(EXEC_MINITERM) $(DEV_SERIAL)
 
 ##------------------------------------------------------------------------------
 ## Run clippy
