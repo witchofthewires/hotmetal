@@ -138,6 +138,60 @@ unsafe fn kernel_init() -> ! {
     kernel_main()
 }
 
+const MINILOAD_LOGO: &str = r#"
+ __  __ _      _ _                 _
+|  \/  (_)_ _ (_) |   ___  __ _ __| |
+| |\/| | | ' \| | |__/ _ \/ _` / _` |
+|_|  |_|_|_||_|_|____\___/\__,_\__,_|
+"#;
+
+/// The main function running after the early init.
+fn kernel_main() -> ! {
+    use console::console;
+
+    println!("{}", MINILOAD_LOGO);
+    println!("{:^37}", bsp::board_name());
+    println!();
+    println!("[ML] Requesting binary");
+    console().flush();
+
+    // Discard any spurious received characters before starting with the loader protocol.
+    console().clear_rx();
+
+    // Notify `Minipush` to send the binary.
+    for _ in 0..3 {
+        console().write_char(3 as char);
+    }
+
+    // Read the binary's size.
+    let mut size: u32 = u32::from(console().read_char() as u8);
+    size |= u32::from(console().read_char() as u8) << 8;
+    size |= u32::from(console().read_char() as u8) << 16;
+    size |= u32::from(console().read_char() as u8) << 24;
+
+    // Trust it's not too big.
+    console().write_char('O');
+    console().write_char('K');
+
+    let kernel_addr: *mut u8 = bsp::memory::board_default_load_addr() as *mut u8;
+    unsafe {
+        // Read the kernel byte by byte.
+        for i in 0..size {
+            core::ptr::write_volatile(kernel_addr.offset(i as isize), console().read_char() as u8)
+        }
+     }
+
+    println!("[ML] Loaded! Executing the payload now\n");
+    console().flush();
+
+    // Use black magic to create a function pointer.
+    let kernel: fn() -> ! = unsafe { core::mem::transmute(kernel_addr) };
+
+    // Jump to loaded kernel!
+    kernel()
+}
+
+/* 
 /// takes over from unsafe kernel_init()
 fn kernel_main() -> ! {
 
@@ -169,3 +223,4 @@ fn kernel_main() -> ! {
     println!("[_] HotMetal OS - Complete. Have a nice day :)");
     cpu::wait_forever()
 }
+*/
